@@ -212,10 +212,14 @@ def backtracking_dfs(G, start):
         visited.remove(node)
         path.pop()
         return False
-
+    
+    path = []
+    finish_node = None
     finished = dfs(start)
-    finish_node = path[-1]
-    path = [tuple(p) for p in path]
+
+    if finished:
+        finish_node = path[-1]
+        path = [tuple(p) for p in path]
 
     time_finished = datetime.now() - time_start
     elapsed_s = time_finished.total_seconds()
@@ -246,10 +250,14 @@ def greedy_dfs(G, start):
         visited.remove(node)
         path.pop()
         return False
-
+    
+    path = []
+    finish_node = None
     finished = dfs(start)
-    finish_node = path[-1]
-    path = [tuple(p) for p in path]
+    
+    if finished:
+        finish_node = path[-1]
+        path = [tuple(p) for p in path]
 
     time_finished = datetime.now() - time_start
     elapsed_s = time_finished.total_seconds()
@@ -285,7 +293,6 @@ def edge_elimination(G, start):
                     G.nodes[node]["visited_edge"] = required_degree
                     for nb in neighbors:
                         if (nb == start or G.degree(nb) == 1) and G.nodes[nb]["visited_edge"] == 1:
-                            G.nodes[node]["visited_edge"] -= 1
                             continue
                             
                         edge = tuple(sorted((node, nb)))
@@ -309,7 +316,6 @@ def edge_elimination(G, start):
                     
                     selected_nodes = None
                     if not edges_to_remove and G.degree(node) > 2:
-                        print(node)
                         visited = set()
 
                         def dfs(u):
@@ -384,8 +390,6 @@ def edge_elimination(G, start):
             temp_visited_edge = visited_edge.copy()
             temp_visited_edge.add(tuple(sorted((target_node[0], target_node[1]))))
 
-            print(target_node)
-            
             for node in target_node:
                 if (node == start or G.degree(node) == 1) and G.nodes[node]["visited_edge"] == 1:
                     continue
@@ -428,9 +432,3 @@ def edge_elimination(G, start):
     elapsed_s = time_finished.total_seconds()
 
     return path, finished, finish_node, f"{elapsed_s:.6f} s ({elapsed_s*1000:.3f} ms)"
-    
-
-
-
-
-    
