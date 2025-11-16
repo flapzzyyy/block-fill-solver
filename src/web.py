@@ -1,20 +1,22 @@
-from flask import Flask, render_template_string, request
-import json
-import numpy as np
-from algo import get_graph_from_binary_matrix, backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
-from image import ImageProcessor
-import base64
-import cv2 as cv
 import os
+import json
+import base64
+import numpy as np
+import cv2 as cv
+from flask import Flask, render_template_string, request
 
-public_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'public'))
-app = Flask(__name__, static_folder=public_path, static_url_path='/public')
-# app = Flask(__name__)
+# Deployment 
+from src.algo import get_graph_from_binary_matrix, backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
+from src.image import ImageProcessor
+# Local testing
+# from algo import get_graph_from_binary_matrix, optimized_dfs, backtracking_dfs, greedy_dfs, edge_elimination
+# from image import ImageProcessor
+
+app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg'}
 
 processor = ImageProcessor()
-
 
 # Base HTML with placeholder tokens for which sections/buttons are active initially
 BASE_HTML = '''
@@ -176,7 +178,7 @@ BASE_HTML = '''
         .grid-container {
             display: inline-block;
             border: 2px solid #333;
-            margin: 20px auto;
+            margin: 0 auto;
             background: #fff;
         }
         
@@ -188,6 +190,9 @@ BASE_HTML = '''
             border: 1px solid #ccc;
             cursor: pointer;
             transition: all 0.2s;
+            flex-shrink: 0;
+            touch-action: none; 
+            user-select: none;
         }
         
         .grid-cell.walkable { background: #e0e0e0; }
@@ -202,7 +207,41 @@ BASE_HTML = '''
             gap: 15px;
             margin-bottom: 20px;
             justify-content: center;
+            flex-wrap: wrap;
         }
+
+        .grid-wrapper {
+            width: 100%;
+            max-height: 640px;
+            overflow-x: auto;           
+            overflow-y: auto;         
+            padding: 20px 0;
+            margin: 20px 0;
+            scrollbar-width: medium;     
+            scrollbar-color: #667eea #f1f1f1;
+            text-align: center;
+        }
+        
+        .grid-wrapper::-webkit-scrollbar { height: 12px; width : 12px; }
+
+        .grid-wrapper::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 6px;
+        }
+        
+        .grid-wrapper::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        }
+
+       .grid-cell {
+            width: 40px;
+            height: 40px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0; 
+        }
+
         
         .control-btn {
             padding: 10px 20px;
@@ -307,6 +346,19 @@ BASE_HTML = '''
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }
         
+        .scroll-hint {
+            text-align: center;
+            color: #667eea;
+            font-size: 0.9em;
+            margin-top: 10px;
+            margin-bottom: 10px;
+            font-weight: 500;
+            display: none;
+        }
+        .scroll-hint.visible {
+            display: block;
+        }
+
         @media (max-width: 768px) {
             .results-section { grid-template-columns: 1fr; }
             .mode-selector { flex-direction: column; }
@@ -379,7 +431,7 @@ BASE_HTML = '''
 
                     <div class="example-card">
                         <div class="example-title">Valid example: </div>
-                        <img src="{{ url_for('static', filename='test3.png') }}"
+                        <img src="{{ url_for('static', filename='example.png') }}"
                             alt="Example input with only a start point. No finish point present."
                             title="Example: only start">
                     </div>
@@ -414,13 +466,13 @@ BASE_HTML = '''
                     <h4>✏️ Manual Instructions:</h4>
                     <p>
                         1. Set grid dimensions<br>
-                        2. Click cells to set: Start (Green), Obstacles (Dark), Walkable (Grey)<br>
+                        2. Click cells or drag (only for Obstacles & Walkable) to set: Start (Green), Obstacles (Dark), Walkable (Grey)<br>
                         3. Solve your custom puzzle!
                     </p>
                 </div>
                 </div>
                 
-                <form id="manualForm">
+                <form id="manualForm onsubmit="return false;">
                     <div class="form-group">
                         <label>Grid Size:</label>
                         <div style="display: flex; gap: 10px;">
@@ -434,14 +486,17 @@ BASE_HTML = '''
                 
                 <div class="grid-editor" id="gridEditor">
                     <div class="grid-controls">
-                        <button class="control-btn" onclick="setMode('start')">🟢 Start</button>
-                        <button class="control-btn" onclick="setMode('obstacle')">⬛ Obstacle</button>
-                        <button class="control-btn active" onclick="setMode('walkable')">⬜ Walkable</button>
+                        <button class="control-btn" onclick="setMode('start', event)">🟢 Start</button>
+                        <button class="control-btn" onclick="setMode('obstacle', event)">⬛ Obstacle</button>
+                        <button class="control-btn active" onclick="setMode('walkable', event)">⬜ Walkable</button>
                     </div>
                     
-                    <div style="text-align: center;">
+
+                    <div class="grid-wrapper" id="gridWrapper">
                         <div id="gridContainer" class="grid-container"></div>
                     </div>
+
+                    <div class="scroll-hint" id="scrollHint">↔️ Scroll untuk melihat seluruh grid</div>
                     
                     <form method="POST" action="/solve_manual">
                         <input type="hidden" id="matrixData" name="matrix_data">
@@ -495,6 +550,14 @@ BASE_HTML = '''
     <script>
         let currentMode = 'walkable';
         let gridMatrix = [];
+        let isPointerDown = false;
+        let isPainting = false;
+        let pointerType = null;
+        let activePaintMode = null;
+        let longPressTimer = null;
+        let longPressThreshold = 0; // ms for touch to start painting (ubah jika perlu)
+        let touchMoveCancelThreshold = 8;
+        let pointerStart = {x:0, y:0};
         
         function switchMode(mode) {
             document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
@@ -514,7 +577,12 @@ BASE_HTML = '''
             const cols = parseInt(document.getElementById('cols').value);
         
             if (rows < 1 || cols < 1) {
-                alert('Grid size must be at least 1');
+                alert('Grid size must be at least 1.');
+                return;
+            }
+
+            if (rows > 50 || cols > 50) {
+                alert('Grid size too large! Max 50x50.');
                 return;
             }
             
@@ -525,72 +593,211 @@ BASE_HTML = '''
             container.innerHTML = '';
             
             for (let i = 0; i < rows; i++) {
-                const row = document.createElement('div');
-                row.className = 'grid-row';
+                const rowEl = document.createElement('div');
+                rowEl.className = 'grid-row';
                 
                 for (let j = 0; j < cols; j++) {
                     const cell = document.createElement('div');
                     cell.className = 'grid-cell walkable';
                     cell.dataset.row = i;
                     cell.dataset.col = j;
-                    cell.onclick = () => toggleCell(i, j);
-                    row.appendChild(cell);
+                    cell.addEventListener('click', (ev) => {
+                        // If user clicked (not part of painting), handle single toggle.
+                        // We ignore clicks that occurred during pointer painting.
+                        if (isPainting) return;
+                        toggleCell(i,j);
+                    });
+                    rowEl.appendChild(cell);
                 }
-                
-                container.appendChild(row);
+                container.appendChild(rowEl);
             }
             
             document.getElementById('gridEditor').classList.add('active');
+
+            checkGridScroll();
+            setupPointerPainting();
+        }
+
+        function checkGridScroll() {
+            const wrapper = document.getElementById('gridWrapper');
+            const container = document.getElementById('gridContainer');
+            const hint = document.getElementById('scrollHint');
+            
+            // Tunggu sebentar agar DOM selesai di-render
+            setTimeout(() => {
+                const needsHorizontalScroll = container.scrollWidth > wrapper.clientWidth;
+                const needsVerticalScroll = container.scrollHeight > wrapper.clientHeight;
+                
+                if (needsHorizontalScroll && needsVerticalScroll) {
+                    hint.textContent = '↔️ ↕️ Scroll horizontal dan vertikal untuk melihat seluruh grid';
+                    hint.classList.add('visible');
+                } else if (needsHorizontalScroll) {
+                    hint.textContent = '↔️ Scroll horizontal untuk melihat seluruh grid';
+                    hint.classList.add('visible');
+                } else if (needsVerticalScroll) {
+                    hint.textContent = '↕️ Scroll vertikal untuk melihat seluruh grid';
+                    hint.classList.add('visible');
+                } else {
+                    hint.classList.remove('visible');
+                }
+            }, 100);
         }
         
-        function setMode(mode) {
+        function setMode(mode, ev) {
             currentMode = mode;
             document.querySelectorAll('.control-btn').forEach(btn => btn.classList.remove('active'));
-            // safe approach: find the clicked element via event
-            if (event && event.target) {
-                // if the button contains an inner element (emoji/text), climb up to button
-                let el = event.target;
-                while (el && !el.classList.contains('control-btn')) {
-                    el = el.parentElement;
-                }
-                if (el) el.classList.add('active');
-            }
+            if (ev && ev.currentTarget) ev.currentTarget.classList.add('active');
         }
         
         function toggleCell(row, col) {
-            const cell = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+            const cell = document.querySelector(`.grid-cell[data-row="${row}"][data-col="${col}"]`);
             if (!cell) return;
-            
-            // Remove existing start/finish if setting new one
             if (currentMode === 'start') {
+                // remove old starts
                 document.querySelectorAll('.grid-cell.start').forEach(c => {
                     c.className = 'grid-cell walkable';
-                    const r = parseInt(c.dataset.row);
-                    const cl = parseInt(c.dataset.col);
-                    gridMatrix[r][cl] = 1;
+                    gridMatrix[+c.dataset.row][+c.dataset.col] = 1;
                 });
                 cell.className = 'grid-cell start';
                 gridMatrix[row][col] = 2;
             } else if (currentMode === 'obstacle') {
+                // don't override start
+                if (cell.classList.contains('start')) return;
                 cell.className = 'grid-cell obstacle';
                 gridMatrix[row][col] = 0;
             } else {
+                // walkable
+                if (cell.classList.contains('start')) return;
                 cell.className = 'grid-cell walkable';
                 gridMatrix[row][col] = 1;
             }
+        }
+
+        // Apply paint to a cell element (used during dragging)
+        function applyPaintToCellElement(cellEl, modeToApply) {
+            if (!cellEl || !cellEl.classList.contains('grid-cell')) return;
+            const r = +cellEl.dataset.row;
+            const c = +cellEl.dataset.col;
+            if (Number.isNaN(r) || Number.isNaN(c)) return;
+
+            // never overwrite 'start' unless modeToApply is 'start' (we want start to be explicit)
+            if (cellEl.classList.contains('start') && modeToApply !== 'start') return;
+
+            if (modeToApply === 'start') {
+                // single start application - remove other starts
+                document.querySelectorAll('.grid-cell.start').forEach(cel => {
+                    cel.className = 'grid-cell walkable';
+                    gridMatrix[+cel.dataset.row][+cel.dataset.col] = 1;
+                });
+                cellEl.className = 'grid-cell start';
+                gridMatrix[r][c] = 2;
+            } else if (modeToApply === 'obstacle') {
+                cellEl.className = 'grid-cell obstacle';
+                gridMatrix[r][c] = 0;
+            } else { // walkable
+                cellEl.className = 'grid-cell walkable';
+                gridMatrix[r][c] = 1;
+            }
+        }
+
+        // Pointer painting setup (attach listeners once)
+        let pointerHandlersAttached = false;
+        function setupPointerPainting(){
+            if (pointerHandlersAttached) return;
+            pointerHandlersAttached = true;
+
+            const container = document.getElementById('gridContainer');
+
+            // pointerdown: start potential painting
+            container.addEventListener('pointerdown', (ev) => {
+                const targetCell = ev.target.closest('.grid-cell');
+                if (!targetCell) return;
+                isPointerDown = true;
+                pointerType = ev.pointerType; // 'mouse', 'pen', 'touch'
+                activePaintMode = currentMode;
+
+                pointerStart.x = ev.clientX;
+                pointerStart.y = ev.clientY;
+
+                // IMPORTANT: allow preventDefault() to work => passive: false (see listener options below)
+                if (pointerType === 'mouse' || pointerType === 'pen') {
+                    isPainting = (activePaintMode !== 'start'); // start mode single click
+                    if (isPainting) {
+                        ev.preventDefault();
+                        try { container.setPointerCapture(ev.pointerId); } catch(e){}
+                        applyPaintToCellElement(targetCell, activePaintMode);
+                    } else {
+                        applyPaintToCellElement(targetCell, activePaintMode);
+                    }
+                } else if (pointerType === 'touch') {
+                    isPainting = (activePaintMode !== 'start');
+                    if (isPainting) {
+                        ev.preventDefault();
+                        try { container.setPointerCapture(ev.pointerId); } catch(e){}
+                        applyPaintToCellElement(targetCell, activePaintMode);
+                    } else {
+                        applyPaintToCellElement(targetCell, activePaintMode);
+                    }
+                }
+            }, { passive: false }); 
+
+            // pointermove: if painting, apply to cell under pointer
+            container.addEventListener('pointermove', (ev) => {
+                if (!isPointerDown) return;
+
+                if (pointerType === 'touch' && longPressTimer) {
+                    const dx = Math.abs(ev.clientX - pointerStart.x);
+                    const dy = Math.abs(ev.clientY - pointerStart.y);
+                    if (dx > touchMoveCancelThreshold || dy > touchMoveCancelThreshold) {
+                        // user likely scrolling -> cancel long-press
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                        isPainting = false;
+                        return;
+                    }
+                }
+
+                if (!isPainting) return;
+                const targetCell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.grid-cell');
+                if (!targetCell) return;
+                ev.preventDefault(); // prevent scroll while painting
+                applyPaintToCellElement(targetCell, activePaintMode);
+            }, { passive: false }); // <-- passive:false so preventDefault() works
+
+            // pointerup/pointercancel: stop painting, cleanup
+            container.addEventListener('pointerup', (ev) => { cleanupPointer(ev); });
+            container.addEventListener('pointercancel', (ev) => { cleanupPointer(ev); });
+
+            // global pointerup as fallback
+            window.addEventListener('pointerup', (ev) => {
+                if (isPointerDown) cleanupPointer(ev);
+            });
+        }
+
+
+        function cleanupPointer(ev){
+            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+            if (isPainting && ev && ev.pointerId) {
+                try { document.getElementById('gridContainer').releasePointerCapture(ev.pointerId); } catch(e){}
+            }
+            isPointerDown = false;
+            isPainting = false;
+            pointerType = null;
+            activePaintMode = null;
         }
         
         function submitMatrix() {
             const hasStart = gridMatrix.some(row => row.includes(2));
 
             if (!hasStart) {
-                alert('Please set both Start (Green) and Finish (Red) positions!');
+                alert('Please set Start (Green) positions!');
                 return false;
             }
             
             document.getElementById('matrixData').value = JSON.stringify(gridMatrix);
             return true;
         }
+
     </script>
 </body>
 </html>
@@ -598,15 +805,14 @@ BASE_HTML = '''
 
 # Build two concrete templates by replacing tokens:
 IMAGE_TEMPLATE = BASE_HTML.replace('__UPLOAD_ACTIVE__', 'active') \
-                          .replace('__MANUAL_ACTIVE__', '') \
-                          .replace('__UPLOAD_BTN_ACTIVE__', 'active') \
-                          .replace('__MANUAL_BTN_ACTIVE__', '')
+                            .replace('__MANUAL_ACTIVE__', '') \
+                            .replace('__UPLOAD_BTN_ACTIVE__', 'active') \
+                            .replace('__MANUAL_BTN_ACTIVE__', '')
 
 MANUAL_TEMPLATE = BASE_HTML.replace('__UPLOAD_ACTIVE__', '') \
-                           .replace('__MANUAL_ACTIVE__', 'active') \
-                           .replace('__UPLOAD_BTN_ACTIVE__', '') \
-                           .replace('__MANUAL_BTN_ACTIVE__', 'active')
-
+                            .replace('__MANUAL_ACTIVE__', 'active') \
+                            .replace('__UPLOAD_BTN_ACTIVE__', '') \
+                            .replace('__MANUAL_BTN_ACTIVE__', 'active')
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
@@ -618,9 +824,7 @@ def img_to_datauri_b64(img_ndarray):
 
 @app.route('/', methods=['GET'])
 def index():
-    # default to upload view
     return render_template_string(IMAGE_TEMPLATE)
-
 
 @app.route('/solve_upload', methods=['POST'])
 def solve_upload():
@@ -628,7 +832,7 @@ def solve_upload():
         return render_template_string(IMAGE_TEMPLATE, error='No file uploaded')
     
     file = request.files['file']
-    algorithm = request.form.get('algorithm', 'edge_elimination')
+    algorithm = request.form.get('algorithm', 'forced_move')
     
     if file.filename == '':
         return render_template_string(IMAGE_TEMPLATE, error='No file selected')
@@ -695,12 +899,11 @@ def solve_upload():
     
     return render_template_string(IMAGE_TEMPLATE, error='Invalid file type')
 
-
 @app.route('/solve_manual', methods=['POST'])
 def solve_manual():
     try:
         matrix_json = request.form.get('matrix_data')
-        algorithm = request.form.get('algorithm', 'edge_elimination')
+        algorithm = request.form.get('algorithm', 'forced_move')
         
         if not matrix_json:
             return render_template_string(MANUAL_TEMPLATE, error='No matrix data received')
