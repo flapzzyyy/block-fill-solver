@@ -130,8 +130,6 @@ class ImageProcessor:
                                         cv.BORDER_CONSTANT, value=COLOR_MAP[0])
         self.last_img_bgr = img.copy()
 
-        # if self.original_img_bgr is None:
-        #     self.original_img_bgr = img.copy()
         return img
 
     def draw_path_on_image(self, matrix, path, start, finish):

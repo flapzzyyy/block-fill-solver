@@ -6,11 +6,11 @@ import cv2 as cv
 from flask import Flask, render_template_string, request
 
 # Deployment 
-from src.algo import get_graph_from_binary_matrix, backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
-from src.image import ImageProcessor
+# from src.algo import get_graph_from_binary_matrix, backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
+# from src.image import ImageProcessor
 # Local testing
-# from algo import get_graph_from_binary_matrix, optimized_dfs, backtracking_dfs, greedy_dfs, edge_elimination
-# from image import ImageProcessor
+from algo import get_graph_from_binary_matrix,  backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
+from image import ImageProcessor
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
@@ -317,6 +317,16 @@ BASE_HTML = '''
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
 
+        .result-box-single {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            margin : 0 auto;
+        }
+
+        .result-box-single h3 { margin-bottom: 15px; color: #333; }
+
         .example-card {
             background: #fff;
             border: 1px solid rgba(0,0,0,0.06);
@@ -389,7 +399,7 @@ BASE_HTML = '''
 <body>
     <div class="container">
         <header>
-            <h1>🎯 Block Fill Solver</h1>
+            <h1>Block Fill Solver</h1>
             <p>Upload your puzzle image or create a custom matrix</p>
         </header>
         
@@ -416,7 +426,8 @@ BASE_HTML = '''
                     <p>Create your own puzzle</p>
                 </div>
             </div>
-            
+
+            <!-- Upload Mode -->
             <div class="upload-section __UPLOAD_ACTIVE__">
                 <div class="info-box">
                     <div class="info-text">
@@ -444,10 +455,10 @@ BASE_HTML = '''
                     </div>
                     
                     <div class="form-group">
-                        <label for="algorithm">🧮 Select Algorithm:</label>
+                        <label for="algorithm">Select Algorithm:</label>
                         <select id="algorithm" name="algorithm" required>
                             <option value="backtracking" selected>Backtracking DFS</option>
-                            <option value="greedy" selected>Warnsdorff's rule</option>
+                            <option value="greedy" selected>Warnsdorff's Rule</option>
                             <option value="validation_edge_elimination" selected>Validation Edge Elimination</option>
                             <option value="validation_forced_move" selected>Validation Forced Move</option>
                             <option value="edge_elimination" selected>Edge Elimination</option>
@@ -481,7 +492,7 @@ BASE_HTML = '''
                         </div>
                     </div>
                     
-                    <button type="button" class="btn" onclick="createGrid()">🎨 Create Grid</button>
+                    <button type="button" class="btn" onclick="createGrid()">Create Grid</button>
                 </form>
                 
                 <div class="grid-editor" id="gridEditor">
@@ -501,17 +512,17 @@ BASE_HTML = '''
                     <form method="POST" action="/solve_manual">
                         <input type="hidden" id="matrixData" name="matrix_data">
                         <div class="form-group">
-                            <label for="algorithm2">🧮 Select Algorithm:</label>
+                            <label for="algorithm2"> Select Algorithm:</label>
                             <select id="algorithm2" name="algorithm">
                                 <option value="backtracking" selected>Backtracking DFS</option>
-                                <option value="greedy" selected>Warnsdorff's rule</option>
+                                <option value="greedy" selected>Warnsdorff's Rule</option>
                                 <option value="validation_edge_elimination" selected>Validation Edge Elimination</option>
                                 <option value="validation_forced_move" selected>Validation Forced Move</option>
                                 <option value="edge_elimination" selected>Edge Elimination</option>
                                 <option value="forced_move" selected>Forced Move</option>
                             </select>
                         </div>
-                        <button type="submit" class="btn" onclick="return submitMatrix()">🚀 Solve Puzzle</button>
+                        <button type="submit" class="btn" onclick="return submitMatrix()"> Solve Puzzle</button>
                     </form>
                 </div>
             </div>
@@ -520,7 +531,7 @@ BASE_HTML = '''
             {% if path_length %}
             <div class="info-box" style="margin-top: 20px;">
                 <div class="info-text">
-                <h4>📊 Solution Statistics:</h4>
+                <h4> Solution Statistics:</h4>
                 <p>
                     <strong>Path Length:</strong> {{ path_length }} steps<br>
                     <strong>Algorithm:</strong> {{ algo_used }}<br>
@@ -544,6 +555,26 @@ BASE_HTML = '''
             
             {% endif %}
             {% endif %}
+
+
+            {% if original_img and NotFound %}
+            <div class="info-box" style="margin-top: 20px;">
+                <div class="info-text">
+                <h4>Solution Statistics:</h4>
+                <p>
+                    <strong>Algorithm:</strong> {{ algo_used }}<br>
+                    <strong>Time Elapsed:</strong> {{time_elapsed}}<br>
+                    <strong>Status:</strong> Solution Not Found!
+                </p>
+
+                <div class="result-box-single">
+                    <h3>📷 Original Image</h3>
+                    <img src="data:image/png;base64,{{ original_img }}" alt="Original">
+                </div>
+            </div>
+            </div>
+            {% endif %}
+
         </div>
     </div>
     
@@ -551,13 +582,127 @@ BASE_HTML = '''
         let currentMode = 'walkable';
         let gridMatrix = [];
         let isPointerDown = false;
+        let initialManualGrid = null;  // copy state matrix
         let isPainting = false;
         let pointerType = null;
         let activePaintMode = null;
         let longPressTimer = null;
-        let longPressThreshold = 0; // ms for touch to start painting (ubah jika perlu)
+        let longPressThreshold = 10; // ms for touch to start painting
         let touchMoveCancelThreshold = 8;
         let pointerStart = {x:0, y:0};
+
+        function saveGridToStorage() {
+            try {
+                if (initialManualGrid !== null) {
+                    localStorage.setItem('initialManualGrid', JSON.stringify(initialManualGrid));
+                    localStorage.setItem('manualGridCreated', '1');
+                }
+                if (Array.isArray(gridMatrix) && gridMatrix.length) {
+                    localStorage.setItem('gridMatrix', JSON.stringify(gridMatrix));
+                }
+            } catch (e) {
+                console.warn('Could not save grid to localStorage:', e);
+            }
+        }
+
+        function clearManualGridStorage() {
+            localStorage.removeItem('initialManualGrid');
+            localStorage.removeItem('gridMatrix');
+            localStorage.removeItem('manualGridCreated');
+        }
+
+            // Render grid DOM dari sebuah matriks (matrix: array of arrays)
+            // isInitialRestore: jika true, jangan overwrite initialManualGrid (kecuali tidak ada sebelumnya)
+        function renderGridFromMatrix(matrix, isInitialRestore = false) {
+                if (!Array.isArray(matrix) || !matrix.length) return;
+
+                const rows = matrix.length;
+                const cols = matrix[0].length;
+
+                // update inputs
+                const rowsInput = document.getElementById('rows');
+                const colsInput = document.getElementById('cols');
+                if (rowsInput) rowsInput.value = rows;
+                if (colsInput) colsInput.value = cols;
+
+                // set global gridMatrix
+                gridMatrix = JSON.parse(JSON.stringify(matrix)); // deep clone for safety
+
+                // if there's no initialManualGrid yet, set it (or if we want to preserve previously saved initial, skip)
+                if (!initialManualGrid || !isInitialRestore) {
+                    initialManualGrid = JSON.parse(JSON.stringify(matrix));
+                }
+
+                const container = document.getElementById('gridContainer');
+                if (!container) return;
+                container.innerHTML = '';
+
+                for (let i = 0; i < rows; i++) {
+                    const rowEl = document.createElement('div');
+                    rowEl.className = 'grid-row';
+
+                    for (let j = 0; j < cols; j++) {
+                        const cell = document.createElement('div');
+                        // determine class based on matrix value: 1 => walkable, 0 => obstacle, 2 => start (green)
+
+                        const val = matrix[i][j];
+                        if (val === 2) {
+                            cell.className = 'grid-cell start';
+                        } else if (val === 0) {
+                            cell.className = 'grid-cell obstacle';
+                        } else {
+                            cell.className = 'grid-cell walkable';
+                        }
+                        cell.dataset.row = i;
+                        cell.dataset.col = j;
+                        cell.addEventListener('click', (ev) => {
+                            if (isPainting) return;
+
+                            toggleCell(i, j);
+
+                            saveGridToStorage();
+                        });
+                        rowEl.appendChild(cell);
+                    }
+                    container.appendChild(rowEl);
+                }
+
+                // make editor visible (sama dengan createGrid)
+                const editor = document.getElementById('gridEditor');
+                if (editor) editor.classList.add('active');
+
+                checkGridScroll && checkGridScroll();
+                setupPointerPainting && setupPointerPainting();
+
+                // persist current state
+                saveGridToStorage();
+            }
+
+            // restore dari localStorage jika tersedia
+            function restoreGridFromStorage() {
+                try {
+                    const storedInitial = localStorage.getItem('initialManualGrid');
+                    const storedMatrix = localStorage.getItem('gridMatrix');
+                    if (storedMatrix) {
+                        const parsed = JSON.parse(storedMatrix);
+                        // render last edited matrix, but keep initialManualGrid from storage if present
+                        if (storedInitial) {
+                            initialManualGrid = JSON.parse(storedInitial);
+                        }
+                        renderGridFromMatrix(parsed, true);
+                        return;
+                    }
+                    if (storedInitial) {
+                        const parsedInit = JSON.parse(storedInitial);
+                        initialManualGrid = JSON.parse(storedInitial);
+                        renderGridFromMatrix(parsedInit, true);
+                        return;
+                    }
+                    // else nothing to restore
+                } catch (e) {
+                    console.warn('Could not restore grid from localStorage:', e);
+                }
+            }
         
         function switchMode(mode) {
             document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
@@ -586,8 +731,14 @@ BASE_HTML = '''
                 return;
             }
             
-            // Initialize matrix with all 1s (walkable)
+            // Initialize 1s (walkable)
             gridMatrix = Array(rows).fill().map(() => Array(cols).fill(1));
+
+            initialManualGrid = JSON.parse(JSON.stringify(gridMatrix));
+
+            saveGridToStorage();
+
+            renderGridFromMatrix(gridMatrix);
             
             const container = document.getElementById('gridContainer');
             container.innerHTML = '';
@@ -614,8 +765,6 @@ BASE_HTML = '''
             
             document.getElementById('gridEditor').classList.add('active');
 
-            checkGridScroll();
-            setupPointerPainting();
         }
 
         function checkGridScroll() {
@@ -623,7 +772,6 @@ BASE_HTML = '''
             const container = document.getElementById('gridContainer');
             const hint = document.getElementById('scrollHint');
             
-            // Tunggu sebentar agar DOM selesai di-render
             setTimeout(() => {
                 const needsHorizontalScroll = container.scrollWidth > wrapper.clientWidth;
                 const needsVerticalScroll = container.scrollHeight > wrapper.clientHeight;
@@ -680,11 +828,9 @@ BASE_HTML = '''
             const c = +cellEl.dataset.col;
             if (Number.isNaN(r) || Number.isNaN(c)) return;
 
-            // never overwrite 'start' unless modeToApply is 'start' (we want start to be explicit)
             if (cellEl.classList.contains('start') && modeToApply !== 'start') return;
 
             if (modeToApply === 'start') {
-                // single start application - remove other starts
                 document.querySelectorAll('.grid-cell.start').forEach(cel => {
                     cel.className = 'grid-cell walkable';
                     gridMatrix[+cel.dataset.row][+cel.dataset.col] = 1;
@@ -698,6 +844,8 @@ BASE_HTML = '''
                 cellEl.className = 'grid-cell walkable';
                 gridMatrix[r][c] = 1;
             }
+
+            saveGridToStorage();
         }
 
         // Pointer painting setup (attach listeners once)
@@ -719,7 +867,6 @@ BASE_HTML = '''
                 pointerStart.x = ev.clientX;
                 pointerStart.y = ev.clientY;
 
-                // IMPORTANT: allow preventDefault() to work => passive: false (see listener options below)
                 if (pointerType === 'mouse' || pointerType === 'pen') {
                     isPainting = (activePaintMode !== 'start'); // start mode single click
                     if (isPainting) {
@@ -795,8 +942,11 @@ BASE_HTML = '''
             }
             
             document.getElementById('matrixData').value = JSON.stringify(gridMatrix);
+
             return true;
         }
+
+        window.addEventListener('DOMContentLoaded', () => { restoreGridFromStorage(); });
 
     </script>
 </body>
@@ -878,14 +1028,16 @@ def solve_upload():
             else:
                 return render_template_string(IMAGE_TEMPLATE, error='Unknown algorithm')
             
+            original_b64 = img_to_datauri_b64(getattr(processor, 'last_img_bgr', processor.last_img_bgr))
+            
             if finish_status is False:
-                return render_template_string(IMAGE_TEMPLATE, 
-                    error='Could not find path from start to finish.')
+                return render_template_string(IMAGE_TEMPLATE, original_img=original_b64, time_elapsed=time_elapsed,
+                                              algo_used=algo_name,path_length=None, result_img=None, NotFound=True,
+                                              error='Could not find path from start to finish.')
             
-            result_img = processor.draw_path_on_image(matrix, path, start, finish_node)
-            original_b64 = img_to_datauri_b64(getattr(processor, 'original_img_bgr', processor.last_img_bgr))
             result_b64 = img_to_datauri_b64(result_img)
-            
+            result_img = processor.draw_path_on_image(matrix, path, start, finish_node)
+
             return render_template_string(IMAGE_TEMPLATE, 
                 original_img=original_b64,
                 result_img=result_b64,
@@ -942,12 +1094,14 @@ def solve_manual():
         else:
             return render_template_string(IMAGE_TEMPLATE, error='Unknown algorithm')
         
+        original_b64 = img_to_datauri_b64(getattr(processor, 'last_img_bgr', processor.last_img_bgr))
+        
         if finish_status is False:
-            return render_template_string(MANUAL_TEMPLATE, 
-                error='Could not find path from start to finish.')
+            return render_template_string(MANUAL_TEMPLATE, original_img=original_b64, time_elapsed=time_elapsed,
+                                            algo_used=algo_name,path_length=None, result_img=None, NotFound=True,
+                                            error='Could not find path from start to finish.')
         
         result_img = processor.draw_path_on_image(matrix, path, start, finish_node)
-        original_b64 = img_to_datauri_b64(getattr(processor, 'original_img_bgr', processor.last_img_bgr))
         result_b64 = img_to_datauri_b64(result_img)
         
         return render_template_string(MANUAL_TEMPLATE, 
@@ -963,7 +1117,7 @@ def solve_manual():
 
 # Local testing
 
-# if __name__ == '__main__':
-#     print("🚀 Starting Block Fill Solver...")
-#     print("📍 Open your browser and go to: http://localhost:5000")
-#     app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == '__main__':
+    print("🚀 Starting Block Fill Solver...")
+    print("📍 Open your browser and go to: http://localhost:5000")
+    app.run(debug=True, host='0.0.0.0', port=5000)
