@@ -571,8 +571,10 @@ def validation_edge_elimination_dfs(G, start):
                     edge = tuple(sorted((node_list, nb)))
                     if edge not in visited_edge:
                         removed_edge.add(edge)
-                        print(node_list, nb)
-                        G.nodes[node_list]["degree_value"] -= 1
+
+                        required_degree = 1 if (node_list == start or G.nodes[node_list]["degree_value"] == 1) else 2
+                        if G.nodes[node_list]["degree_value"] > required_degree:
+                            G.nodes[node_list]["degree_value"] -= 1
 
                         required_degree = 1 if (nb == start or G.nodes[nb]["degree_value"] == 1) else 2
                         if G.nodes[nb]["degree_value"] > required_degree:
