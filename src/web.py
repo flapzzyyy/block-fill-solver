@@ -6,11 +6,11 @@ import cv2 as cv
 from flask import Flask, render_template_string, request
 
 # Deployment 
-# from src.algo import get_graph_from_binary_matrix, backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
-# from src.image import ImageProcessor
+from src.algo import get_graph_from_binary_matrix, backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
+from src.image import ImageProcessor
 # Local testing
-from algo import get_graph_from_binary_matrix,  backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
-from image import ImageProcessor
+# from algo import get_graph_from_binary_matrix,  backtracking_dfs, greedy_dfs, forced_move_dfs, edge_elimination_dfs, validation_forced_move_dfs, validation_edge_elimination_dfs
+# from image import ImageProcessor
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
@@ -1117,7 +1117,7 @@ def solve_manual():
 
 # Local testing
 
-if __name__ == '__main__':
-    print("🚀 Starting Block Fill Solver...")
-    print("📍 Open your browser and go to: http://localhost:5000")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+# if __name__ == '__main__':
+#     print("🚀 Starting Block Fill Solver...")
+#     print("📍 Open your browser and go to: http://localhost:5000")
+#     app.run(debug=True, host='0.0.0.0', port=5000)
