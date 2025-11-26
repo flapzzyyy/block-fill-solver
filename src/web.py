@@ -1035,8 +1035,8 @@ def solve_upload():
                                               algo_used=algo_name,path_length=None, result_img=None, NotFound=True,
                                               error='Could not find path from start to finish.')
             
-            result_b64 = img_to_datauri_b64(result_img)
             result_img = processor.draw_path_on_image(matrix, path, start, finish_node)
+            result_b64 = img_to_datauri_b64(result_img)
 
             return render_template_string(IMAGE_TEMPLATE, 
                 original_img=original_b64,
